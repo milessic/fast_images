@@ -11,11 +11,7 @@ app.mount("/static", StaticFiles(directory=FE_DIR), name="static")
 
 
 def is_hidden(path):
-    with open('kurwa.log','a') as f:
-         f.write(f"""{str(path).split(sep="/")}\n""")
-    if str(path).split(sep="/")[-1].startswith("."):
-        return True
-    return False
+    return path.name.startswith(".")
 
 def list_dir(path: Path):
     folders, images = [], []

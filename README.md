@@ -11,6 +11,7 @@ It's in beta, please look at the roadmap for 1.0:
 - [ ] save client settings like save interval
 - [ ] laod images[index +1] picture when images[index] is already loaded
 - [ ] add restriction to fefch data only from ```MEDIA_DIR``` and thumbs only from ```THUMBS_DIR``` (security) 
+- [ ] delete image from memory if it was already loaded
 - [ ] host demo :)
 
 - [ ] fix aspect ratio issue on ```IMAGE_RESOLUTION != original```
