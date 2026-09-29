@@ -1,7 +1,46 @@
-let resolution = 'original';
+// null -> let the server use IMAGE_RESOLUTION from .env
+let resolution = null;
 let currentPath = "";
 let slideshow = null;
-let images = [];
+// media of the current folder: [{path, video}]
+let media = [];
+// open overlay state: {list, index, container, current, preloaded, playing}
+let viewer = null;
+
+const SETTINGS_KEY = "fast_images.settings";
+
+function loadSettings(){
+	try {
+		return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+	} catch (e) {
+		return {};
+	}
+}
+
+function saveSettings(patch){
+	try {
+		localStorage.setItem(SETTINGS_KEY, JSON.stringify({...loadSettings(), ...patch}));
+	} catch (e) {
+		console.error("Couldn't save settings", e);
+	}
+}
+
+function mediaUrl(item, res = resolution){
+	const path = encodeURIComponent(item.path);
+	if (item.video) return `/api/video?path=${path}`;
+	return res ? `/api/image?path=${path}&res=${res}` : `/api/image?path=${path}`;
+}
+
+function joinPath(base, name){
+	return base ? `${base}/${name}` : name;
+}
+
+function toMedia(data){
+	return [
+		...data.images.map(i => ({path: joinPath(data.path, i), video: false})),
+		...(data.videos || []).map(v => ({path: joinPath(data.path, v), video: true})),
+	].sort((a, b) => a.path.localeCompare(b.path, undefined, {sensitivity: "base"}));
+}
 
 // track focus
 let items = [];
@@ -74,15 +113,16 @@ function setFocus(element){
 // slide show speed
 function updateSlideShowSpeed(){
 	let raw_input = parseInt(slideshowspeed.value);
-	if (isNaN(raw_input)){
+	if (isNaN(raw_input) || raw_input < 1){
 		console.error(`This is not an integeer! - '${raw_input}'`)
 		return
 	}
-	console.log('ok');
-	slideshow_speed = parseInt(slideshowspeed.value) * 1000;
+	slideshow_speed = raw_input * 1000;
+	saveSettings({slideshowSpeed: raw_input});
 }
 
 let slideshow_speed = 0
+if (loadSettings().slideshowSpeed) slideshowspeed.value = loadSettings().slideshowSpeed;
 updateSlideShowSpeed();
 
 
@@ -113,127 +153,269 @@ function updatePathHeader(path){
 
 }
 
-async function collectImages(path) {
-  const res = await fetch(`/api/browse?path=${path}`);
-  const data = await res.json();
+async function fetchDir(path) {
+	const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+	if (!res.ok) throw new Error(`Couldn't open '${path}' (${res.status})`);
+	return res.json();
+}
 
-  let imgs = data.images.map(i => `${data.path}/${i}`);
+async function collectMedia(path) {
+	const data = await fetchDir(path);
+	let list = toMedia(data);
 
-  for (const folder of data.folders) {
-    const subPath = data.path ? `${data.path}/${folder}` : folder;
-    const subImgs = await collectImages(subPath);
-    imgs = imgs.concat(subImgs);
-  }
+	for (const folder of data.folders) {
+		list = list.concat(await collectMedia(joinPath(data.path, folder)));
+	}
 
-  return imgs;
+	return list;
 }
 
 
 
 async function browse(path = "") {
 	updatePathHeader(path);
-	const res = await fetch(`/api/browse?path=${path}`);
-	const data = await res.json();
+	const data = await fetchDir(path);
 	currentPath = path;
+	currentIndex = 0;
 	render(data);
 }
 
 function render(data) {
-	updateItems();
 	const grid = document.getElementById("grid");
 	grid.innerHTML = "";
-	
+
 	data.folders.forEach(f => {
 		const el = document.createElement("div");
 		el.className = "item";
 		el.classList.add('fitem');
-		el.innerHTML = `📁<div>${f}</div>`;
-		el.onclick = () => browse(`${data.path}/${f}`);
+		el.innerHTML = `📁<div></div>`;
+		el.querySelector("div").textContent = f;
+		el.onclick = () => browse(joinPath(data.path, f));
 		grid.appendChild(el);
 	});
 
-	images = data.images.map(i => `${data.path}/${i}`);
-	
-	images.forEach(i => {
+	media = toMedia(data);
+
+	media.forEach((m, index) => {
 		const el = document.createElement("div");
 		el.className = "item";
 		el.classList.add("fitem");
-		el.innerHTML = `<img src="/api/image?path=${i}&res=low"/><div>${i.split('/').pop()}</div>`;
-		el.onclick = () => openImage(i);
+		if (m.video) {
+			el.innerHTML = `<div class="video-thumb">🎬</div><div></div>`;
+		} else {
+			el.innerHTML = `<img loading="lazy"/><div></div>`;
+			el.querySelector("img").src = mediaUrl(m, "low");
+		}
+		el.lastElementChild.textContent = m.path.split('/').pop();
+		el.onclick = () => openViewer(media, index);
 		grid.appendChild(el);
 	});
 	document.querySelectorAll('.fitem').forEach((el) => {setFitem(el)})
+	updateItems();
 }
 
-function openImage(path) {
-	document.querySelectorAll('.img-container').forEach(e => e.remove());
+// --- viewer (single picture / video, used by the slideshow too) ---
+
+function createMediaElement(item){
+	let el;
+	if (item.video) {
+		el = document.createElement("video");
+		el.controls = true;
+		el.playsInline = true;
+		el.preload = "auto";
+	} else {
+		el = document.createElement("img");
+		el.decoding = "async";
+	}
+	el.classList.add("viewer-media");
+	el.dataset.path = item.path;
+	el.src = mediaUrl(item);
+	return el;
+}
+
+// drop the element and its data so the browser can free the decoded picture / video buffers
+function releaseMedia(el){
+	if (!el) return;
+	el.onload = el.onerror = el.onended = null;
+	if (el.tagName === "VIDEO") el.pause();
+	el.removeAttribute("src");
+	if (el.tagName === "VIDEO") el.load();
+	el.remove();
+}
+
+function openViewer(list, index = 0, playing = false){
+	closeViewer();
 	const container = document.createElement("div");
-	container.classList.add('img-container');
-	container.classList.add('overlay');
-	const img = document.createElement("img");
-	img.src = `/api/image?path=${path}&res=${resolution}`;
-	container.appendChild(img);
-	document.body.appendChild(container);
-	container.onclick = () => {
-		clearInterval(slideshow);
-		container.remove();
+	container.className = "img-container overlay";
+	container.innerHTML = `
+		<button class="viewer-btn viewer-prev" title="Previous">‹</button>
+		<button class="viewer-btn viewer-next" title="Next">›</button>
+		<div class="viewer-top">
+			<button class="viewer-btn viewer-play" title="Play / pause slideshow"></button>
+			<button class="viewer-btn viewer-close" title="Close">✕</button>
+		</div>`;
+	const onButton = (selector, fn) => {
+		container.querySelector(selector).onclick = (e) => { e.stopPropagation(); fn(); };
 	};
+	onButton(".viewer-prev", () => step(-1));
+	onButton(".viewer-next", () => step(1));
+	onButton(".viewer-play", togglePlay);
+	onButton(".viewer-close", closeViewer);
+	container.onclick = closeViewer;
+
+	let touchX = null;
+	container.addEventListener("touchstart", (e) => { touchX = e.changedTouches[0].clientX; }, {passive: true});
+	container.addEventListener("touchend", (e) => {
+		if (touchX === null) return;
+		const dx = e.changedTouches[0].clientX - touchX;
+		touchX = null;
+		if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+	});
+
+	document.body.appendChild(container);
+	viewer = {list, index, container, current: null, preloaded: null, playing};
+	showCurrent();
+}
+
+function closeViewer(){
+	clearTimeout(slideshow);
+	if (!viewer) return;
+	releaseMedia(viewer.current);
+	releaseMedia(viewer.preloaded);
+	viewer.container.remove();
+	viewer = null;
+}
+
+function showCurrent(){
+	clearTimeout(slideshow);
+	const item = viewer.list[viewer.index];
+
+	let el;
+	if (viewer.preloaded && viewer.preloaded.dataset.path === item.path) {
+		el = viewer.preloaded;
+	} else {
+		releaseMedia(viewer.preloaded);
+		el = createMediaElement(item);
+	}
+	viewer.preloaded = null;
+	releaseMedia(viewer.current);
+	viewer.current = el;
+	viewer.container.appendChild(el);
+	updatePlayButton();
+
+	const isCurrent = () => viewer && viewer.current === el;
+
+	if (item.video) {
+		// clicking the video controls shouldn't close the viewer
+		el.onclick = (e) => e.stopPropagation();
+		el.onended = () => { if (isCurrent() && viewer.playing) step(1); };
+		el.onerror = () => { if (isCurrent()) scheduleNext(); };
+		el.play().catch(() => {
+			// autoplay with sound can be blocked, retry muted
+			el.muted = true;
+			el.play().catch(() => {});
+		});
+		preloadNext();
+	} else {
+		const loaded = () => {
+			if (!isCurrent()) return;
+			preloadNext();
+			scheduleNext();
+		};
+		if (el.complete) loaded();
+		else el.onload = el.onerror = loaded;
+	}
+}
+
+// start downloading the next picture once the current one is loaded
+function preloadNext(){
+	if (!viewer || viewer.list.length < 2) return;
+	const next = viewer.list[(viewer.index + 1) % viewer.list.length];
+	if (next.video) return;
+	viewer.preloaded = createMediaElement(next);
+}
+
+function scheduleNext(){
+	clearTimeout(slideshow);
+	if (!viewer || !viewer.playing) return;
+	const item = viewer.list[viewer.index];
+	// videos advance on 'ended'; broken videos fall through to the timer
+	if (item.video && !viewer.current.error) return;
+	slideshow = setTimeout(() => step(1), slideshow_speed);
+}
+
+function step(delta){
+	if (!viewer) return;
+	const len = viewer.list.length;
+	viewer.index = (viewer.index + delta + len) % len;
+	showCurrent();
+}
+
+function togglePlay(){
+	if (!viewer) return;
+	viewer.playing = !viewer.playing;
+	updatePlayButton();
+	if (!viewer.playing) {
+		clearTimeout(slideshow);
+	} else if (viewer.current.tagName === "VIDEO" && viewer.current.ended) {
+		step(1);
+	} else {
+		scheduleNext();
+	}
+}
+
+function updatePlayButton(){
+	viewer.container.querySelector(".viewer-play").textContent = viewer.playing ? "⏸" : "▶";
 }
 
 async function startSlideshow(shuffle=false) {
-	clearInterval(slideshow);
-	const list = await collectImages(currentPath);
+	const list = await collectMedia(currentPath);
 	if (!list.length){
-		const msg = "Dind't detect any images!"
+		const msg = "Didn't detect any pictures or videos!"
 		window.alert(msg);
 		console.error(msg);
 		return
 	}
-	console.log(list);
-	if (shuffle) list.sort(() => Math.random() - 0.5);
-	let i = 0;
-	openImage(list[0]);
-	slideshow = setInterval(() => {
-		openImage(list[i++ % list.length]);
-		}, slideshow_speed);
+	if (shuffle) {
+		for (let i = list.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[list[i], list[j]] = [list[j], list[i]];
+		}
+	}
+	openViewer(list, 0, true);
 }
 
 document.querySelectorAll("#play").forEach(e => e.onclick = () => startSlideshow(false));
-document.querySelectorAll("#pause").forEach(e => e.onclick = () => clearInterval(slideshow));
 document.querySelectorAll("#shuffle").forEach(e => e.onclick = () => startSlideshow(true));
-document.querySelectorAll("#slideshowspeed").forEach(e => e.onchange = () => updateSlideShowSpeed());
-document.querySelectorAll("#slideshowspeed").forEach(e => e.onkeydown = () => updateSlideShowSpeed());
+document.querySelectorAll("#slideshowspeed").forEach(e => e.oninput = () => updateSlideShowSpeed());
 
 document.addEventListener("keydown", (e) => {
+	if (viewer) {
+		if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+		e.preventDefault();
+		if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+			step(1);
+		} else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+			step(-1);
+		} else if (e.key === " ") {
+			const v = viewer.current;
+			if (v.tagName === "VIDEO") v.paused ? v.play() : v.pause();
+			else togglePlay();
+		} else {
+			closeViewer();
+		}
+		return;
+	}
+	if (e.target.tagName === "INPUT") return;
+
 	updateItems();
+	if (!items.length) return;
 	if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
 		e.preventDefault();
-		const overlay = document.querySelector('.overlay');
-		if (overlay){
-			const img = overlay.querySelector('img');
-			if (!img) return;
-
-			let currentIndex = images.findIndex(i => i === img.dataset.path);
-			if (currentIndex === -1) currentIndex = 0;
-
-			if (e.key ==='ArrowRight' || e.key === 'ArrowDown') {
-				currentIndex = (currentIndex + 1) % images.length;
-			} else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){
-				currentIndex = (currentIndex - 1) % images.length;
-			}
-
-			img.src = `/api/image?path=${images[currentIndex]}&res=${resolution}`;
-			img.dataset.path = images[currentIndex];
-		} else {
-			moveFocus(e.key);
-		}
+		moveFocus(e.key);
 	} else if (e.key === "Enter") {
 		e.preventDefault();
 		items[currentIndex].click();
-	} else {
-		if (document.querySelector(".overlay")) {
-			document.querySelector(".overlay").remove();
-		}
 	}
 });
 
