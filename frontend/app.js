@@ -136,7 +136,8 @@ function updatePathHeader(path){
 	
 	// root
 	const root_el = document.createElement('button');
-	root_el.innerText = "Home";
+	root_el.className = "btn small ghost";
+	root_el.innerText = "Pictures";
 	root_el.onclick = () => browse("");
 	pathheader.appendChild(root_el);
 
@@ -144,6 +145,7 @@ function updatePathHeader(path){
 	for (let i = 0; i < as_list.length; i++){
 		const e = as_list[i];
 		const sp_el = document.createElement('button');
+		sp_el.className = "btn small ghost";
 		const this_path = as_list.slice(0,i+1).join("/"); 
 		sp_el.innerText = e ;
 
@@ -246,13 +248,13 @@ function releaseMedia(el){
 function openViewer(list, index = 0, playing = false){
 	closeViewer();
 	const container = document.createElement("div");
-	container.className = "img-container overlay";
+	container.className = "img-container viewer-overlay";
 	container.innerHTML = `
-		<button class="viewer-btn viewer-prev" title="Previous">‹</button>
-		<button class="viewer-btn viewer-next" title="Next">›</button>
+		<button class="btn viewer-btn viewer-prev" title="Previous">‹</button>
+		<button class="btn viewer-btn viewer-next" title="Next">›</button>
 		<div class="viewer-top">
-			<button class="viewer-btn viewer-play" title="Play / pause slideshow"></button>
-			<button class="viewer-btn viewer-close" title="Close">✕</button>
+			<button class="btn viewer-btn viewer-play" title="Play / pause slideshow"></button>
+			<button class="btn viewer-btn viewer-close" title="Close">✕</button>
 		</div>`;
 	const onButton = (selector, fn) => {
 		container.querySelector(selector).onclick = (e) => { e.stopPropagation(); fn(); };
@@ -383,6 +385,15 @@ async function startSlideshow(shuffle=false) {
 		}
 	}
 	openViewer(list, 0, true);
+}
+
+// style picker (milessic-themes), the choice is kept in a cookie so the server renders it on the next load
+if (window.MilessicThemes) {
+	MilessicThemes.mountPicker(document.getElementById("theme-picker"), {
+		label: "Style",
+		onChange: (key) => { document.cookie = `theme=${encodeURIComponent(key)}; path=/; max-age=31536000; SameSite=Lax`; },
+	}).then(() => { document.getElementById("theme-settings").hidden = false; })
+	  .catch((e) => console.error("Couldn't load styles", e));
 }
 
 document.querySelectorAll("#play").forEach(e => e.onclick = () => startSlideshow(false));

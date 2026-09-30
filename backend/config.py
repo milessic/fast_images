@@ -32,6 +32,9 @@ MEDIA_DIR = Path(env.get("MEDIA_DIR")).resolve()
 THUMB_DIR = Path(env.get("THUMBS_DIR", os.path.join(os.path.dirname(__file__), ".thumbs"))).resolve()
 SAVE_THUMBNAILS = env.get("SAVE_THUMBNAILS", True)
 IMAGE_RESOLUTION = env.get("IMAGE_RESOLUTION", "original") # low | medium | high | original
+HOME_URL = env.get("HOME_URL") or None # the 'Home' button is hidden when not set
+STYLES_URL = (env.get("STYLES_URL") or "").rstrip("/") or None # milessic-themes server, unstyled when not set
+STYLES_VERSION = env.get("STYLES_VERSION", "1.0.0")
 
 THUMB_SIZES = {
         "low": (320, 240),

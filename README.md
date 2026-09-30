@@ -27,8 +27,14 @@ MEDIA_DIR=/media/photos
 THUMBS_DIR=/media/thumbs
 SAVE_THUMBNAILS=True
 IMAGE_RESOLUTION=original
+HOME_URL=http://homepage.local
+STYLES_URL=http://mbs.local:9312
 ```
 IMAGE_RESOLUTION can be 'original', 'high', 'medium', 'low'
+
+HOME_URL is opened by the 'Home' button in the top bar (the button is hidden when empty).
+
+STYLES_URL is the [milessic-themes](http://mbs.local:9312/manifesto) server. Users pick a style at the bottom of the page, it's remembered in a cookie. Optional `STYLES_VERSION` pins the themes version (default `1.0.0`). Without STYLES_URL, or when the themes server is down, the app works unstyled.
 
 Supported pictures: jpg, jpeg, png, webp. Supported videos: mp4, webm, mov, m4v, mkv, ogv (playback depends on the browser's codecs).
 

@@ -1,38 +1,44 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-theme="{{THEME}}">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
 
 <title>Pictures</title>
+{{STYLES_HEAD}}
 <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-<div id="app">
-<header>Fast Pictures</header>
-<h3 id="pathheader"></h3>
-<div class="toolbox">
-	<button class="fitem" id="play">▶</button>
-	<button class="fitem" id="shuffle">🔀</button>
-</div>
-<hr>
-<main id="grid"></main>
-<hr>
-<div class="toolbox">
-	<button class="fitem" id="play">▶</button>
-	<button class="fitem" id="shuffle">🔀</button>
-	<div>
-	<label class="fitem" for="slideshowspeed">Slideshow speed (s)</label>
-	<input class="fitem" id="slideshowspeed" type="number" min="1" value="5">
+<header class="topbar">
+	<a class="brand" href="/">Fast Pictures</a>
+	<div class="topbar-end">{{HOME_BUTTON}}</div>
+</header>
+<main class="container" id="app">
+	<div class="page-head">
+		<h3 id="pathheader"></h3>
 	</div>
-
-</div>
-	<footer>
+	<section class="card">
+		<div class="toolbox">
+			<button class="btn fitem" id="play" title="Slideshow">▶</button>
+			<button class="btn fitem" id="shuffle" title="Shuffled slideshow">🔀</button>
+		</div>
+		<div id="grid"></div>
+		<div class="toolbox">
+			<button class="btn fitem" id="play" title="Slideshow">▶</button>
+			<button class="btn fitem" id="shuffle" title="Shuffled slideshow">🔀</button>
+			<label>Slideshow speed (s)
+				<input class="fitem" id="slideshowspeed" type="number" min="1" value="5">
+			</label>
+		</div>
+	</section>
+	<details class="card" id="theme-settings" hidden>
+		<summary>Style</summary>
+		<div id="theme-picker"></div>
+	</details>
+	<footer class="card small muted">
 		<span>Created by</span> <a href="https://mjportfolio.bieda.it/" target="_blank">Miłosz 'milessic' Jura</a><span id="year">, 2024</span>
 	</footer>
-</div>
+</main>
 <script src="/static/app.js"></script>
 </body>
 </html>
-
-

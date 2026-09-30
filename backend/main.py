@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, HTTPException, Cookie
+from fastapi.responses import FileResponse, Response, HTMLResponse
+from html import escape
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from config import MEDIA_DIR, IMAGE_RESOLUTION, FE_DIR, THUMB_SIZES, IMAGE_EXTS, VIDEO_EXTS
+from config import MEDIA_DIR, IMAGE_RESOLUTION, FE_DIR, THUMB_SIZES, IMAGE_EXTS, VIDEO_EXTS, HOME_URL
 from thumbnails import get_thumbnail
+from themes import resolve_theme, styles_head
 
 app = FastAPI()
 
@@ -62,6 +64,15 @@ def video(path: str):
     return FileResponse(vid)
 
 
+INDEX_HTML = (FE_DIR / "index.html").read_text(encoding="utf-8")
+
+
 @app.get("/")
-def home():
-    return FileResponse(FE_DIR / "index.html")
+def home(theme: str | None = Cookie(default=None)):
+    theme = resolve_theme(theme)
+    home_button = f'<a class="btn small" href="{escape(HOME_URL)}">⌂ Home</a>' if HOME_URL else ""
+    html = (INDEX_HTML
+            .replace("{{THEME}}", escape(theme))
+            .replace("{{STYLES_HEAD}}", styles_head(theme))
+            .replace("{{HOME_BUTTON}}", home_button))
+    return HTMLResponse(html)
